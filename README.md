@@ -48,3 +48,119 @@ if (address.results[0]) {
   address = "Location Unavailable"
 };
 ```
+
+### Server-side Error Handling
+
+Error handling on the backend is handled with express-validator. When a request is sent to one of the backend routes,e.g. POST pins, all the parameters are ran through ```validatePinInput```
+
+```
+router.post('/:eventId', requireUser, validatePinInput, async (req, res, next) => {
+    try {
+        const dupPins = await Pin.find({event: req.params.eventId})
+
+        Object.values(dupPins).forEach((dupPin) => {
+            if (`${dupPin.order}` === req.body.order && `${dupPin.order}`) {
+                throw next(error);
+            }
+        })
+```
+
+Once all the parameters are checked, all the errors are sent to ```handleValidationErrors```
+
+```
+# Pins Validations
+
+const { check } = require("express-validator");
+const handleValidationErrors = require('./handleValidationErrors');
+
+const validatePinInput = [
+  check('location')
+    .exists({ checkFalsy: true })
+    .isLength(2)
+    .withMessage('Location must have two values'),
+  check('task')
+    .isLength({ max: 1000 })
+    .withMessage('Instructions must be less than 1000 characters'),
+  check('supplies')
+    .isLength({ max: 500 })
+    .withMessage('Supplies must be less than 500 characters'),
+  check('order')
+    .exists({ checkFalsy: true })
+    .withMessage('Pin must have an order'),
+  check('directionToPin')
+    .isLength({ min: 0, max: 500 })
+    .exists({ checkFalsy: true })
+    .withMessage('Directions must be less than 500 characters'),
+  handleValidationErrors
+];
+```
+
+If errors exist, a status "400" and the title "Validation Error" error is sent to the frontend.
+
+```
+const handleValidationErrors = (req, res, next) => {
+  const validationErrors = validationResult(req);
+  
+  if (!validationErrors.isEmpty()) {
+    const errorFormatter = ({ msg }) => msg;
+    const errors = validationErrors.formatWith(errorFormatter).mapped();
+
+    const err = Error("Validation Error");
+    err.errors = errors;
+    err.statusCode = 400;
+    err.title = "Validation Error";
+    next(err);
+  }
+  next();
+};
+```
+
+###Image Uploads
+
+When creating an event, image uploads were sent as PATCH requests, after the initial POST request for creating the event was processed. This is due to the need to send the image as FormData, which cannot be put through the validation checks seen above. We instead did our validation checks of the image in the frontend, ensuring the image is a jpg, jpeg, for png. Once the image request was made, a call to ```imageUpload``` is made. If an image exists ```req.file.location``` is given to the image attribute. If no image exists (i.e. the user decided not to upload an image), a default url is given to the image attribute. 
+
+```
+#Event Controller
+
+router.patch('/addImage/:eventId', validateEventInput, async (req, res, next) => {
+    const eventId = req.params.eventId
+    let photoUrl
+    imageUpload.single("images")(req, res, async function (err) {
+    if(!req.file){
+        photoUrl = 'https://treasure-photos.s3.us-west-1.amazonaws.com/1669765988351'
+    } else{
+        photoUrl = await req.file.location
+    }
+
+    Event.findByIdAndUpdate((eventId), {image: photoUrl})
+    .exec()
+    .then((event) => {
+        if(!event) {
+            res.status(400).send(`Id ${req.params.id} was not found`);
+        } else {
+            res.status(200).send(`Id ${req.params.id} was updated`)
+        }
+    }) 
+    })
+});
+```
+
+The actual uploading of the image to AWS S3 uses the node.js middle ware multer. Please note, the following function is exported as  ```upload```, but imported as ```imageUpload``` in events controller. 
+```
+const upload = multer({
+    fileFilter,
+    storage: multerS3({
+      acl: "public-read",
+      s3,
+      bucket: 'treasure-photos',
+      metadata: function (req, file, cb) {
+        cb(null, { fieldName: "TESTING_METADATA" });
+      },
+      key: function (req, file, cb) {
+        cb(null, Date.now().toString());
+      },
+    }),
+  });
+
+  module.exports = upload;
+```
