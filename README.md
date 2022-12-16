@@ -115,7 +115,7 @@ const handleValidationErrors = (req, res, next) => {
 };
 ```
 
-###Image Uploads
+### Image Uploads
 
 When creating an event, image uploads were sent as PATCH requests, after the initial POST request for creating the event was processed. This is due to the need to send the image as FormData, which cannot be put through the validation checks seen above. We instead did our validation checks of the image in the frontend, ensuring the image is a jpg, jpeg, for png. Once the image request was made, a call to ```imageUpload``` is made. If an image exists ```req.file.location``` is given to the image attribute. If no image exists (i.e. the user decided not to upload an image), a default url is given to the image attribute. 
 
@@ -146,6 +146,7 @@ router.patch('/addImage/:eventId', validateEventInput, async (req, res, next) =>
 ```
 
 The actual uploading of the image to AWS S3 uses the node.js middle ware multer. Please note, the following function is exported as  ```upload```, but imported as ```imageUpload``` in events controller. 
+
 ```
 const upload = multer({
     fileFilter,
